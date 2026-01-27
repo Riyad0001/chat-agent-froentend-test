@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Chat Test</title>
+</head>
+<body>
+    <h2>WebSocket Chat Test</h2>
+    <input type="text" id="messageInput" placeholder="Type a message..." style="width: 300px;">
+    <button onclick="sendMessage()">Send</button>
+    <div id="chatLog" style="margin-top: 20px; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;"></div>
+
+    <script>
+        // Connect to WebSocket
+        const socket = new WebSocket('wss://healthyearth.softvencealpha.com/ws/chat/');
+        let sessionId = null;
+
+        socket.onopen = function(e) {
+            console.log("Connection established");
+            appendToLog("System", "Connected to WebSocket");
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log("Message received:", data);
+            
+            if (data.error) {
+                appendToLog("Error", data.error);
+            } else {
+                appendToLog("AI", data.text);
+                if (data.session_id) {
+                    sessionId = data.session_id; // Store session ID for continuity
+                }
+            }
+        };
+
+        socket.onclose = function(event) {
+            if (event.wasClean) {
+                appendToLog("System", `Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+            } else {
+                appendToLog("System", 'Connection died');
+            }
+        };
+
+        socket.onerror = function(error) {
+            appendToLog("System", `Error: ${error.message}`);
+        };
+
+        function sendMessage() {
+            const input = document.getElementById("messageInput");
+            const message = input.value;
+            
+            if (message) {
+                const payload = {
+                    message: message,
+                    session_id: sessionId 
+                };
+                socket.send(JSON.stringify(payload));
+                appendToLog("User", message);
+                input.value = '';
+            }
+        }
+
+        function appendToLog(sender, message) {
+            const log = document.getElementById("chatLog");
+            const entry = document.createElement("div");
+            entry.innerHTML = `<strong>${sender}:</strong> ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+    </script>
+</body>
+</html>
