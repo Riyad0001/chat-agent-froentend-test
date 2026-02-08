@@ -11,7 +11,7 @@
 
     <script>
         // Connect to WebSocket
-        const socket = new WebSocket('wss://healthyearth.softvencealpha.com/ws/chat/');
+        const socket = new WebSocket('wss://api.healthy-earth.com/ws/chat/');
         let sessionId = null;
 
         socket.onopen = function(e) {
@@ -27,6 +27,13 @@
                 appendToLog("Error", data.error);
             } else {
                 appendToLog("AI", data.text);
+                
+                // Display suggested products
+                if (data.suggested_products && data.suggested_products.length > 0) {
+                    const productsText = "💡 Suggested Products: " + data.suggested_products.join(", ");
+                    appendToLog("Products", productsText, true);
+                }
+                
                 if (data.session_id) {
                     sessionId = data.session_id; // Store session ID for continuity
                 }
@@ -60,10 +67,18 @@
             }
         }
 
-        function appendToLog(sender, message) {
+        function appendToLog(sender, message, isProduct = false) {
             const log = document.getElementById("chatLog");
             const entry = document.createElement("div");
-            entry.innerHTML = `<strong>${sender}:</strong> ${message}`;
+            
+            if (isProduct) {
+                entry.innerHTML = `<strong style="color: #667eea;">${sender}:</strong> <span style="color: #764ba2; font-weight: bold;">${message}</span>`;
+            } else if (sender === "AI") {
+                entry.innerHTML = `<strong style="color: #2c3e50;">${sender}:</strong> ${message}`;
+            } else {
+                entry.innerHTML = `<strong>${sender}:</strong> ${message}`;
+            }
+            
             log.appendChild(entry);
             log.scrollTop = log.scrollHeight;
         }

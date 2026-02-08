@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Voice WebRTC Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 24px auto; }
+    button { margin-right: 8px; padding: 8px 12px; }
+    #log { border: 1px solid #ccc; padding: 10px; height: 240px; overflow: auto; background: #f8f8f8; }
+  </style>
+</head>
+<body>
+  <h3>Voice WebRTC Test</h3>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+  <audio id="remoteAudio" autoplay playsinline></audio>
+  <div id="log"></div>
+
+  <script>
+    const API_BASE = "https://api.healthy-earth.com";
+    const SHOW_EVENTS = false;
+    const SYSTEM_PROMPT = "You are Ella, a professional plant assistant.\nCRITICAL: You are speaking, not typing.\n1. Reply in ONE SENTENCE ONLY.\n2. Keep it under 20 words.\n3. Be friendly but extremely concise.\n4. No lists, no markdown, no long pauses.\n5. Only talk about plants/farming .";
+    let pc = null;
+    let localStream = null;
+    let dataChannel = null;
+    let remoteAudio = document.getElementById("remoteAudio");
+
+    const logEl = document.getElementById("log");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+
+    function log(msg) {
+      const div = document.createElement("div");
+      div.textContent = msg;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function start() {
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      const sessionRes = await fetch(API_BASE + "/api/v1/voice/webrtc/session/", {
+        method: "POST"
+      });
+
+      let sessionData = null;
+      const contentType = sessionRes.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        sessionData = await sessionRes.json();
+      } else {
+        const text = await sessionRes.text();
+        log("Session error: " + text);
+        stop();
+        return;
+      }
+
+      if (!sessionRes.ok || !sessionData.client_secret) {
+        log("Session error: " + JSON.stringify(sessionData));
+        stop();
+        return;
+      }
+
+      const clientSecret = sessionData.client_secret;
+      const model = (sessionData.session && sessionData.session.model) || "gpt-4o-mini-realtime-preview";
+
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      pc = new RTCPeerConnection();
+      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+
+      pc.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+        remoteAudio.play().catch((err) => {
+          log("Audio play blocked: " + err.message);
+        });
+        log("Remote audio track connected.");
+      };
+
+      dataChannel = pc.createDataChannel("oai-events");
+      dataChannel.onopen = () => {
+        log("Data channel open.");
+        const sessionUpdate = {
+          type: "session.update",
+          session: {
+            instructions: SYSTEM_PROMPT
+          }
+        };
+        dataChannel.send(JSON.stringify(sessionUpdate));
+      };
+      dataChannel.onmessage = (event) => {
+        if (!SHOW_EVENTS) {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type && payload.type.includes("error")) {
+              log("Error: " + event.data);
+            }
+          } catch (err) {
+            log("Event parse error: " + err.message);
+          }
+          return;
+        }
+        log("event: " + event.data);
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const sdpRes = await fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model), {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + clientSecret,
+          "Content-Type": "application/sdp"
+        },
+        body: offer.sdp
+      });
+
+      if (!sdpRes.ok) {
+        log("SDP error: " + (await sdpRes.text()));
+        stop();
+        return;
+      }
+
+      const answerSdp = await sdpRes.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+      log("Connected. Speak now.");
+    }
+
+    function stop() {
+      if (dataChannel) {
+        dataChannel.close();
+        dataChannel = null;
+      }
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+        localStream = null;
+      }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      log("Stopped.");
+    }
+
+    startBtn.addEventListener("click", () => start().catch((err) => {
+      log("Start error: " + err.message);
+      stop();
+    }));
+    stopBtn.addEventListener("click", stop);
+  </script>
+</body>
+</html>

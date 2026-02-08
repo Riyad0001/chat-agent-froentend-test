@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ella Chat Test</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; }
+        #chat { border: 1px solid #ccc; height: 400px; overflow-y: auto; padding: 10px; margin-bottom: 10px; background: #f9f9f9; }
+        .msg { margin: 8px 0; padding: 8px; border-radius: 5px; }
+        .user { background: #667eea; color: white; text-align: right; }
+        .ai { background: #e9ecef; }
+        .product { background: #f0f4ff; color: #667eea; font-weight: bold; margin-top: 5px; padding: 5px; border-radius: 3px; }
+        #input { width: 80%; padding: 8px; }
+        button { padding: 8px 16px; background: #667eea; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        button:disabled { opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <h2>🌱 Ella Chat Test</h2>
+    <div id="chat"></div>
+    <input type="text" id="input" placeholder="Ask about your plant...">
+    <button onclick="send()">Send</button>
+
+    <script>
+        let ws = null;
+        let sid = null;
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('input');
+
+        function connectWS() {
+            ws = new WebSocket('wss://api.healthy-earth.com/ws/chat/');
+            
+            ws.onopen = () => {
+                addMsg('Connected to WebSocket', 'ai');
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                console.log('Received:', data);
+                
+                if (data.text) {
+                    addMsg(data.text, 'ai', data.suggested_product);
+                }
+                if (data.session_id) {
+                    sid = data.session_id;
+                }
+            };
+
+            ws.onerror = (e) => {
+                addMsg('WebSocket Error: ' + e, 'ai');
+            };
+
+            ws.onclose = () => {
+                addMsg('Disconnected', 'ai');
+            };
+        }
+
+        input.onkeypress = (e) => e.key === 'Enter' && send();
+
+        function send() {
+            if (!input.value.trim() || !ws || ws.readyState !== 1) return;
+            
+            const msg = input.value;
+            addMsg(msg, 'user');
+            
+            const payload = {
+                message: msg,
+                session_id: sid
+            };
+            ws.send(JSON.stringify(payload));
+            input.value = '';
+        }
+
+        function addMsg(text, type, product = null) {
+            const div = document.createElement('div');
+            div.className = 'msg ' + type;
+            div.textContent = text;
+            if (product) {
+                const p = document.createElement('div');
+                p.className = 'product';
+                p.textContent = '💡 Product: ' + product;
+                div.appendChild(p);
+            }
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            connectWS();
+        });
+    </script>
+</body>
+</html>
