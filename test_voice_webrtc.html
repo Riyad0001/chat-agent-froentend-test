@@ -17,9 +17,9 @@
   <div id="log"></div>
 
   <script>
-    const API_BASE = "https://api.healthy-earth.com";
+    const API_BASE = "http://127.0.0.1:8000";
     const SHOW_EVENTS = false;
-    const SYSTEM_PROMPT = "You are Ella, a professional plant assistant.\nCRITICAL: You are speaking, not typing.\n1. Reply in ONE SENTENCE ONLY.\n2. Keep it under 20 words.\n3. Be friendly but extremely concise.\n4. No lists, no markdown, no long pauses.\n5. Only talk about plants/farming .";
+    let SYSTEM_PROMPT = ""; // Will be set dynamically
     let pc = null;
     let localStream = null;
     let dataChannel = null;
@@ -34,11 +34,60 @@
       div.textContent = msg;
       logEl.appendChild(div);
       logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    async function buildSystemPrompt() {
+      try {
+        // Fetch products from Django API
+        const res = await fetch(API_BASE + "/api/v1/products/?limit=50");
+        if (!res.ok) {
+          throw new Error("Failed to fetch products");
+        }
+        const data = await res.json();
+        const products = data.data || [];
+
+        // Build concise product context for voice
+        const productLines = products.slice(0, 30).map(p => {
+          const benefits = (p.key_benefits || [])
+            .slice(0, 2)
+            .map(b => b.benefit)
+            .join(", ");
+          const formula = p.formula ? `(${p.formula})` : "";
+          const details = benefits ? ` - ${benefits}` : "";
+          return `${p.name} ${formula}${details}`;
+        });
+        const productContext = productLines.join("; ");
+
+        SYSTEM_PROMPT = `You are Ella, a professional plant assistant.
+CRITICAL: You are speaking, not typing.
+1. Reply in ONE SENTENCE ONLY, under 20 words.
+2. Be friendly but extremely concise.
+3. No lists, no markdown, no long pauses.
+4. Only talk about plants/farming.
+5. When solving a problem, mention a relevant product by its exact name from this list.
+
+Available products: ${productContext}`;
+
+        log("✓ System prompt loaded with products");
+      } catch (err) {
+        log("⚠ Could not load products: " + err.message);
+        // Fallback prompt
+        SYSTEM_PROMPT = `You are Ella, a professional plant assistant.
+CRITICAL: You are speaking, not typing.
+1. Reply in ONE SENTENCE ONLY, under 20 words.
+2. Be friendly but extremely concise.
+3. Only talk about plants/farming.`;
+      }
     }
 
     async function start() {
       startBtn.disabled = true;
       stopBtn.disabled = false;
+
+      if (!SYSTEM_PROMPT) {
+        await buildSystemPrompt();
+      }
 
       const sessionRes = await fetch(API_BASE + "/api/v1/voice/webrtc/session/", {
         method: "POST"
@@ -64,13 +113,19 @@
       const clientSecret = sessionData.client_secret;
       const model = (sessionData.session && sessionData.session.model) || "gpt-4o-mini-realtime-preview";
 
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      } catch (err) {
+        log("Microphone error: " + err.message);
+        stop();
+        return;
+      }
 
       pc = new RTCPeerConnection();
       localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
@@ -80,12 +135,12 @@
         remoteAudio.play().catch((err) => {
           log("Audio play blocked: " + err.message);
         });
-        log("Remote audio track connected.");
+        log("✓ Remote audio connected.");
       };
 
       dataChannel = pc.createDataChannel("oai-events");
       dataChannel.onopen = () => {
-        log("Data channel open.");
+        log("✓ Data channel open. Sending system prompt...");
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -93,13 +148,14 @@
           }
         };
         dataChannel.send(JSON.stringify(sessionUpdate));
+        log("✓ Ready to speak!");
       };
       dataChannel.onmessage = (event) => {
         if (!SHOW_EVENTS) {
           try {
             const payload = JSON.parse(event.data);
             if (payload.type && payload.type.includes("error")) {
-              log("Error: " + event.data);
+              log("⚠ Error: " + payload.type);
             }
           } catch (err) {
             log("Event parse error: " + err.message);
@@ -107,6 +163,9 @@
           return;
         }
         log("event: " + event.data);
+      };
+      dataChannel.onerror = (err) => {
+        log("Data channel error: " + err.message);
       };
 
       const offer = await pc.createOffer();
@@ -130,7 +189,7 @@
       const answerSdp = await sdpRes.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
-      log("Connected. Speak now.");
+      log("✓ Connected. Speak now...");
     }
 
     function stop() {
@@ -148,7 +207,7 @@
       }
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      log("Stopped.");
+      log("✗ Stopped.");
     }
 
     startBtn.addEventListener("click", () => start().catch((err) => {
@@ -156,6 +215,12 @@
       stop();
     }));
     stopBtn.addEventListener("click", stop);
+
+    // Load products on page load for later use
+    window.addEventListener("load", async () => {
+      log("Loading products...");
+      await buildSystemPrompt();
+    });
   </script>
 </body>
 </html>
