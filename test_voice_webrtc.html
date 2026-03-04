@@ -2,22 +2,30 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Voice WebRTC Test</title>
+  <title>Voice WebRTC Test - Enhanced (Detailed Responses)</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 720px; margin: 24px auto; }
     button { margin-right: 8px; padding: 8px 12px; }
     #log { border: 1px solid #ccc; padding: 10px; height: 240px; overflow: auto; background: #f8f8f8; }
+    .info { background: #e8f4f8; padding: 12px; margin: 12px 0; border-radius: 4px; font-size: 14px; }
+    .success { color: #0a7f0a; }
+    .warning { color: #d97706; }
   </style>
 </head>
 <body>
-  <h3>Voice WebRTC Test</h3>
-  <button id="startBtn">Start</button>
+  <h3>🌱 Voice WebRTC Test - Enhanced System</h3>
+  <div class="info">
+    <strong>Test the enhanced voice system:</strong> Detailed responses (2-3 sentences) with exact product names, usage instructions, and nearest retailer locations. Responses start with "AI:" to identify the AI assistant.
+    <br><br>
+    <strong>Try asking:</strong> "My tomato plant has yellow leaves" or "How do I treat powdery mildew?"
+  </div>
+  <button id="startBtn">Start Voice</button>
   <button id="stopBtn" disabled>Stop</button>
   <audio id="remoteAudio" autoplay playsinline></audio>
   <div id="log"></div>
 
   <script>
-    const API_BASE = "http://127.0.0.1:8000";
+    const API_BASE = "http://127.0.0.1:9000";
     const SHOW_EVENTS = false;
     let SYSTEM_PROMPT = ""; // Will be set dynamically
     let pc = null;
@@ -47,37 +55,50 @@
         const data = await res.json();
         const products = data.data || [];
 
-        // Build concise product context for voice
+        // Build detailed product context with usage instructions
         const productLines = products.slice(0, 30).map(p => {
           const benefits = (p.key_benefits || [])
-            .slice(0, 2)
+            .slice(0, 3)
             .map(b => b.benefit)
             .join(", ");
           const formula = p.formula ? `(${p.formula})` : "";
-          const details = benefits ? ` - ${benefits}` : "";
-          return `${p.name} ${formula}${details}`;
+          const usage = p.usage_instructions ? ` - Usage: ${p.usage_instructions.substring(0, 60)}` : "";
+          const dosage = p.dosage ? ` - Dosage: ${p.dosage.substring(0, 40)}` : "";
+          const details = benefits ? ` - Benefits: ${benefits}` : "";
+          return `${p.name} ${formula}${details}${usage}${dosage}`.trim();
         });
-        const productContext = productLines.join("; ");
+        const productContext = productLines.join("\\n");
 
-        SYSTEM_PROMPT = `You are Ella, a professional plant assistant.
-CRITICAL: You are speaking, not typing.
-1. Reply in ONE SENTENCE ONLY, under 20 words.
-2. Be friendly but extremely concise.
-3. No lists, no markdown, no long pauses.
-4. Only talk about plants/farming.
-5. When solving a problem, mention a relevant product by its exact name from this list.
+        SYSTEM_PROMPT = `You are Ella, a professional and knowledgeable plant care assistant.
 
-Available products: ${productContext}`;
+RESPONSE REQUIREMENTS:
+1. Provide DETAILED, HELPFUL responses (2-3 sentences minimum, speak naturally)
+2. Give specific, actionable advice tailored to the user's problem
+3. Recommend EXACT product names from the available list when relevant
+6. Use clear, friendly language suitable for voice
+7. If you recommend a product, say this product available in our website and retailaire location check product description
 
-        log("✓ System prompt loaded with products");
+GUIDELINES:
+- Only answer questions about plants, gardening, farming, and agriculture
+- Be professional but warm and conversational
+- Explain WHY a product or solution works
+- Include brief usage instructions when recommending products
+- If asked about a product or problem you can't help with, politely decline
+
+AVAILABLE PRODUCTS WITH DETAILS:
+${productContext}`;
+
+        log("✓ System prompt loaded with detailed product info");
       } catch (err) {
         log("⚠ Could not load products: " + err.message);
         // Fallback prompt
-        SYSTEM_PROMPT = `You are Ella, a professional plant assistant.
-CRITICAL: You are speaking, not typing.
-1. Reply in ONE SENTENCE ONLY, under 20 words.
-2. Be friendly but extremely concise.
-3. Only talk about plants/farming.`;
+        SYSTEM_PROMPT = `You are Ella, a professional and knowledgeable plant care assistant powered by AI.
+
+RESPONSE REQUIREMENTS:
+1. Provide DETAILED, HELPFUL responses (2-3 sentences, speak naturally)
+3. Give specific, actionable advice for plant problems
+4. Only answer about plants, gardening, farming
+5. Be professional but warm and conversational`;
       }
     }
 
@@ -140,7 +161,7 @@ CRITICAL: You are speaking, not typing.
 
       dataChannel = pc.createDataChannel("oai-events");
       dataChannel.onopen = () => {
-        log("✓ Data channel open. Sending system prompt...");
+        log("✓ Data channel open. Sending system prompt with product details...");
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -148,7 +169,7 @@ CRITICAL: You are speaking, not typing.
           }
         };
         dataChannel.send(JSON.stringify(sessionUpdate));
-        log("✓ Ready to speak!");
+        log("✓ Ready to speak! Say your plant question and listen for detailed AI response with product & retailer info.");
       };
       dataChannel.onmessage = (event) => {
         if (!SHOW_EVENTS) {
@@ -218,8 +239,9 @@ CRITICAL: You are speaking, not typing.
 
     // Load products on page load for later use
     window.addEventListener("load", async () => {
-      log("Loading products...");
+      log("📚 Loading products from database...");
       await buildSystemPrompt();
+      log("✓ Ready. Click 'Start Voice' to begin.");
     });
   </script>
 </body>
